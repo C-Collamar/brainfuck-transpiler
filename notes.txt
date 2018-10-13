@@ -1,0 +1,47 @@
+﻿--- Grammar
+start := expr
+expr  := expr op | op
+op    := + | - | . | , | < | > | loop
+loop  := [expr]
+
+--- Left recursion elimination
+(0) start := expr
+(1) expr  := op expr'
+(2) expr' := op expr' | ε
+(3) op    := + | - | . | , | < | > | loop
+(4) loop  := [expr]
+
+--- FIRST Sets
+FIRST(start) = FIRST(expr)
+FIRST(expr)  = FIRST(op)
+FIRST(expr') = FIRST(op)  ∪ ε
+FIRST(op)    = { +, -, ., ,, <, > }  ∪ FIRST(loop)
+FIRST(loop)  = { [ }
+
+--- FOLLOW Sets
+FOLLOW(start) = { $ }
+FOLLOW(expr)  = FOLLOW(start) ∪ { ] }
+FOLLOW(expr') = FOLLOW(expr)
+FOLLOW(op)    = FOLLOW(expr') - ε ∪ FOLLOW(expr)
+FOLLOW(loop)  = FOLLOW(op)
+
+--- Syntax-Directed Translation
+start := expr { print('char array[LARGE_BUFFER] = { 0 }, *ptr = array;') }
+expr  := op expr'
+      | op
+expr' := op expr' | ε
+op    := + { print('++*ptr') }
+      |  - { print('--*ptr') }
+      |  . { print('putchar(*ptr)') }
+      |  , { print('*ptr = getchar()') }
+      |  > { print('++ptr') }
+      |  < { print('--ptr') }
+loop  := [ { print('while(*ptr) {') } expr ] { print('}') }
+
+--- Test cases
+- Source has no instructions
+- Brackets not balanced
+
+-- Disadvantage
+- Invalid memory access (e.g. negative index)
+- Fixed memory buffer
