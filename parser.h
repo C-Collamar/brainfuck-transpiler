@@ -1,338 +1,152 @@
 /**
- * Grammar Productions:
- * (0) start := expr
- * (1) expr  := op expr'
- * (2) expr' := op expr' | ε
- * (3) op    := + | - | . | , | < | > | loop
- * (4) loop  := [ expr ]
+ * Syntax-directed translation scheme
+ * start := expr { print('[...]char array[LARGE_BUFFER] = { 0 }, *ptr = array;') }
+ * expr  := op expr'
+ *       | op
+ * expr' := op expr' | ε
+ * op    := + { print('++*ptr') }
+ *       |  - { print('--*ptr') }
+ *       |  . { print('putchar(*ptr)') }
+ *       |  , { print('*ptr = getchar()') }
+ *       |  > { print('++ptr') }
+ *       |  < { print('--ptr') }
+ * loop  := [ { print('while(*ptr) {') } expr ] { print('}') }
  */
 
-TokenList *currTokenPtr; //iterates through the token stream
-TokenList *prevTokenPtr; //points to previously consumed token
+#define INDENTATION 4
+#define PTR_ID "ptr"
+
+char* expand(TreeNode *currNode) {
+    if(currNode == NULL)
+        return NULL;
+
+    char *code = NULL;
+    int index;
+
+    switch(currNode->type) {
+        //for non-terminals, expand each child nodes
+        case NODE_START:
+        case NODE_OP:
+        case NODE_EXPR:
+        case NODE_EXPR_CONT:
+        case NODE_LOOP:;
+            char *fragment;
+            size_t codeLen;
+            NodeList *child = currNode->children;
+
+            while(child != NULL) {
+                if((fragment = expand(child->node))) {
+                    if(code == NULL) {
+                        code = fragment;
+                    }
+                    else {
+                        codeLen = strlen(code) + strlen(fragment);
+                        code = realloc(code, sizeof(char) * (codeLen + 1));
+                        code[codeLen] = '\0';
+                        if(currNode->type == NODE_EXPR) {
+                        }
+                        strcat(code, fragment);
+                        free(fragment);
+                    }
+                }
+                child = child->next;
+            }
+            break;
+        //handle terminals according to the syntax-directed translation
+        case NODE_MOVE_LEFT:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 8);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "--"PTR_ID";\n");
+            break;
+        case NODE_MOVE_RIGHT:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 8);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "++"PTR_ID";\n");
+            break;
+        case NODE_INCREMENT:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 9);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "++*"PTR_ID";\n");
+            break;
+        case NODE_DECREMENT:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 9);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "--*"PTR_ID";\n");
+            break;
+        case NODE_OUTPUT:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 16);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "putchar(*"PTR_ID");\n");
+            break;
+        case NODE_INPUT:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 19);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "*"PTR_ID" = getchar();\n");
+            break;
+        case NODE_JUMP_FORWARD:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 15);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "while(*"PTR_ID") {\n");
+            break;
+        case NODE_JUMP_BACKWARD:
+            code = malloc(sizeof(char) * (currNode->depth * INDENTATION) + 3);
+            for(index = 0; index < currNode->depth * INDENTATION; ++index) {
+                code[index] = ' ';
+            }
+            code[index] = '\0';
+            strcat(code, "}\n");
+            break;
+    }
+
+    return code;
+}
 
 /**
- * Enumeration of all terminal and non-terminal symbols in the grammar.
+ * Performs syntax-directed translation given the generated
+ * syntax tree.
  */
-typedef enum Symbol {
-    NODE_START,
-    NODE_EXPR,
-    NODE_EXPR_CONT,
-    NODE_OP,
-    NODE_LOOP,
-    NODE_MOVE_LEFT,
-    NODE_MOVE_RIGHT,
-    NODE_INCREMENT,
-    NODE_DECREMENT,
-    NODE_OUTPUT,
-    NODE_INPUT,
-    NODE_JUMP_FORWARD,
-    NODE_JUMP_BACKWARD
-} Symbol;
+char* translate() {
+    char *precode =
+        "/**\n"
+        " * This code is generated by our Brainf*** compiler.\n"
+        " * You can edit this file however you like, perhaps\n"
+        " * modify the BUFFER_SIZE to your needs in case you\n"
+        " * need to for some reason.\n"
+        " */\n\n"
+        "#include<stdio.h>\n\n"
+        "#define BUFFER_SIZE 1024\n\n"
+        "void main(void) {\n"
+        "    char array[BUFFER_SIZE] = { 0 };\n"
+        "    char *ptr = array;\n\n"
+    ;
+    char *fragment = expand(syntaxTree);
 
-/**
- * Node in the abstract syntax tree. Contains symbol information and
- * child nodes. Note that terminal symbols cannot have child nodes.
- */
-struct TreeNode {
-    Symbol type;
-    unsigned int depth;
-    NodeList *children;
-};
+    char *code = malloc(sizeof(char) * (strlen(precode) + strlen(fragment) + 2));
+    strcpy(code, precode);
+    strcat(code, fragment);
+    strcat(code, "}");
+    free(fragment);
 
-/**
- * Data structure for containing a list of nodes. Mainly used for storing
- * child nodes.
- */
-struct NodeList {
-    TreeNode *node;
-    NodeList *next;
-};
-
-/**
- * Frees allocated nodes and list containers in the abstract syntax tree.
- */
-void freeAST(void) {
-    printf("Work in progress: freeAST()\n");
-}
-
-TreeNode* production1(unsigned int);
-
-TreeNode* parse(void) {
-    TreeNode *rootNode = NULL;
-
-    if(tokenStream) {
-        currTokenPtr = tokenStream;
-
-        rootNode = malloc(sizeof(syntaxTree));
-        rootNode->type = NODE_START;
-        rootNode->depth = 0;
-        rootNode->children = malloc(sizeof(NodeList));
-        rootNode->children->node = production1(rootNode->depth + 1);
-        rootNode->children->next = NULL;
-    }
-    else {
-        fprintf(stderr, "Error: No instructions to compile.\n");
-        freeTokenStream();
-        fclose(inputFile);
-        exit(EXIT_FAILURE);
-    }
-
-    return rootNode;
-}
-
-TreeNode* production4(unsigned int depth) {
-    //if there are no available tokens to consume
-    if(currTokenPtr == NULL) {
-        fprintf(stderr,
-            "Error: Unexpected end of instruction. Expected \"%s\" after \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_JUMP_FORWARD],
-            tokenString[prevTokenPtr->token],
-            prevTokenPtr->position.col,
-            prevTokenPtr->position.row
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-    //if the token to consume is not in the FIRST set of producton 4
-    else if(currTokenPtr->token != TOKEN_JUMP_FORWARD) {
-        fprintf(stderr,
-            "Error: Expected \"%s\" instead of \"%s\" at \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_JUMP_FORWARD],
-            tokenString[prevTokenPtr->token],
-            currTokenPtr->position.col,
-            currTokenPtr->position.row
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-
-    //advance token pointer
-    prevTokenPtr = currTokenPtr;
-    currTokenPtr = currTokenPtr->next;
-
-    //create node for LOOP non-terminal symbol
-    TreeNode *node = malloc(sizeof(TreeNode));
-    node->type = NODE_LOOP;
-    node->depth = depth;
-    node->children = malloc(sizeof(NodeList));
-
-    //create child node for '[' terminal symbol
-    node->children->node = malloc(sizeof(TreeNode));
-    node->children->node->type = NODE_JUMP_FORWARD;
-    node->children->node->depth = depth;
-    node->children->node->children = NULL;
-
-    //create child node for 'expr' non-terminal
-    node->children->next = malloc(sizeof(NodeList));
-    node->children->next->node = production1(depth + 1);
-
-    if(currTokenPtr == NULL) {
-        fprintf(stderr,
-            "Error: Unexpected end of instruction. Expected \"%s\" at least after \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_JUMP_BACKWARD],
-            tokenString[prevTokenPtr->token],
-            prevTokenPtr->position.col,
-            prevTokenPtr->position.row
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-    else if(currTokenPtr->token != TOKEN_JUMP_BACKWARD) {
-        fprintf(stderr,
-            "Error: Expected \"%s\" instead of \"%s\" at \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_JUMP_BACKWARD],
-            tokenString[prevTokenPtr->token],
-            currTokenPtr->position.col,
-            currTokenPtr->position.row
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-
-    //advance token pointer
-    prevTokenPtr = currTokenPtr;
-    currTokenPtr = currTokenPtr->next;
-
-    //create child node for ']' non-terminal
-    node->children->next->next = malloc(sizeof(NodeList));
-    node->children->next->next->next = NULL;
-    node->children->next->next->node = malloc(sizeof(TreeNode));
-    node->children->next->next->node->type = NODE_JUMP_BACKWARD;
-    node->children->next->next->node->depth = depth;
-    node->children->next->next->node->children = NULL;
-
-    return node;
-}
-
-TreeNode* production3(unsigned int depth) {
-    if(currTokenPtr == NULL) {
-        fprintf(stderr,
-            "Error: Unexpected end of instruction. Expected either \"%s\", \"%s\", \"%s\", "
-            "\"%s\", \"%s\", \"%s\" or \"%s\" after \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_MOVE_LEFT],
-            tokenString[TOKEN_MOVE_RIGHT],
-            tokenString[TOKEN_INCREMENT],
-            tokenString[TOKEN_DECREMENT],
-            tokenString[TOKEN_OUTPUT],
-            tokenString[TOKEN_INPUT],
-            tokenString[TOKEN_JUMP_FORWARD],
-            tokenString[prevTokenPtr->token],
-            prevTokenPtr->position.row,
-            prevTokenPtr->position.col
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-    else if(currTokenPtr->token == TOKEN_JUMP_BACKWARD) {
-        fprintf(stderr,
-            "Error: No matching \"%s\" before \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_JUMP_FORWARD],
-            tokenString[TOKEN_JUMP_BACKWARD],
-            currTokenPtr->position.row,
-            currTokenPtr->position.col
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-
-    TreeNode *node = malloc(sizeof(TreeNode));
-    node->type = NODE_OP;
-    node->depth = depth;
-    node->children = malloc(sizeof(NodeList));
-    node->children->next = NULL;
-
-    if(currTokenPtr->token == TOKEN_JUMP_FORWARD) {
-        node->children->node = production4(depth);
-    }
-    else {
-        node->children->node = malloc(sizeof(TreeNode));
-        node->children->node->depth = depth;
-        node->children->node->children = NULL;
-
-        switch(currTokenPtr->token) {
-            case TOKEN_MOVE_LEFT:
-                node->children->node->type = NODE_MOVE_LEFT;
-                break;
-            case TOKEN_MOVE_RIGHT:
-                node->children->node->type = NODE_MOVE_RIGHT;
-                break;
-            case TOKEN_INCREMENT:
-                node->children->node->type = NODE_INCREMENT;
-                break;
-            case TOKEN_DECREMENT:
-                node->children->node->type = NODE_DECREMENT;
-                break;
-            case TOKEN_OUTPUT:
-                node->children->node->type = NODE_OUTPUT;
-                break;
-            case TOKEN_INPUT:
-                node->children->node->type = NODE_INPUT;
-                break;
-            default:
-                fprintf(stderr,
-                    "Error: Unexpected \"%s\" at line %i, column %i. Expected either \"%s\", \"%s\", "
-                    "\"%s\", \"%s\", \"%s\", \"%s\", \"%s\" or \"%s\" after \"%s\" at line %i, column %i.\n",
-                    tokenString[currTokenPtr->token],
-                    currTokenPtr->position.row,
-                    currTokenPtr->position.col,
-                    tokenString[TOKEN_MOVE_LEFT],
-                    tokenString[TOKEN_MOVE_RIGHT],
-                    tokenString[TOKEN_INCREMENT],
-                    tokenString[TOKEN_DECREMENT],
-                    tokenString[TOKEN_OUTPUT],
-                    tokenString[TOKEN_INPUT],
-                    tokenString[TOKEN_JUMP_FORWARD],
-                    tokenString[TOKEN_JUMP_BACKWARD],
-                    tokenString[prevTokenPtr->token],
-                    prevTokenPtr->position.row,
-                    prevTokenPtr->position.col
-                );
-                freeAST();
-                freeTokenStream();
-                free(node->children->node);
-                free(node->children);
-                free(node);
-                exit(EXIT_FAILURE);
-        }
-
-        //point to next token to consume
-        prevTokenPtr = currTokenPtr;
-        currTokenPtr = currTokenPtr->next;
-    }
-
-    return node;
-}
-
-TreeNode* production2(unsigned int depth) {
-    TreeNode *node = NULL;
-
-    if(currTokenPtr != NULL && currTokenPtr->token != TOKEN_JUMP_BACKWARD) {
-        //create node for EXPR_CONT non-terminal symbol
-        node = malloc(sizeof(TreeNode));
-        node->type = NODE_EXPR_CONT;
-        node->depth = depth;
-        node->children = malloc(sizeof(NodeList));
-
-        //create node for OP non-terminal symbol
-        node->children->node = production3(depth);
-        node->children->next = NULL;
-
-        //create node for EXPR_CONT non-terminal symbol if there are remaining tokens
-        if(currTokenPtr != NULL) {
-            node->children->next = malloc(sizeof(NodeList));
-            node->children->next->node = production2(depth);
-            node->children->next->next = NULL;
-        }
-    }
-
-    return node;
-}
-
-TreeNode* production1(unsigned int depth) {
-    //if there are no available tokens to consume
-    if(currTokenPtr == NULL) {
-        fprintf(stderr,
-            "Error: Unexpected end of instruction. Expected either \"%s\", \"%s\", \"%s\", "
-            "\"%s\",\"%s\", \"%s\", \"%s\" or \"%s\" after \"%s\" at line %i, column %i.\n",
-            tokenString[TOKEN_MOVE_LEFT],
-            tokenString[TOKEN_MOVE_RIGHT],
-            tokenString[TOKEN_INCREMENT],
-            tokenString[TOKEN_DECREMENT],
-            tokenString[TOKEN_OUTPUT],
-            tokenString[TOKEN_INPUT],
-            tokenString[TOKEN_JUMP_FORWARD],
-            tokenString[TOKEN_JUMP_BACKWARD],
-            tokenString[prevTokenPtr->token],
-            prevTokenPtr->position.row,
-            prevTokenPtr->position.col
-        );
-        freeAST();
-        freeTokenStream();
-        exit(EXIT_FAILURE);
-    }
-
-    TreeNode *node = malloc(sizeof(TreeNode));
-    node->type = NODE_EXPR;
-    node->depth = depth;
-    node->children = malloc(sizeof(NodeList));
-    node->children->node = production3(depth);
-    node->children->next = NULL;
-
-    if(currTokenPtr) {
-        TreeNode *prod2Node = production2(depth);
-
-        if(prod2Node != NULL) {
-            node->children->next = malloc(sizeof(NodeList));
-            node->children->next->node = prod2Node;
-            node->children->next->next = NULL;
-        }
-    }
-
-    return node;
+    return code;
 }
